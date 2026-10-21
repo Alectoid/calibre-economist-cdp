@@ -122,12 +122,30 @@ taken from `Browser.getVersion`, so it can never drift from the engine again.
 - **Linux, macOS or Windows.** Linux is where this was built and is tested. macOS
   support was contributed in
   [#9](https://github.com/CR0CKER/calibre-economist-cdp/pull/9) and verified end
-  to end by its author; see [macOS](#macos). Windows support is new and not yet
-  verified with a full download; see [Windows](#windows).
+  to end by its author; see [macOS](#macos). Windows support is verified end
+  to end; see [Windows](#windows).
 
 ## Setup
 
 One time: harvest a browser export, import it, seed the profile.
+
+**Or let the setup tool walk you through it.** `economist_setup.py` checks
+Python, the browser and calibre's config dir (and offers the flatpak grant
+below), reads the "Copy as cURL" export straight from the clipboard so no
+temporary file holds the login, lets a bad copy be retried, runs `--seed`, and
+puts the recipe on the clipboard for [Installing the recipe into
+calibre](#installing-the-recipe-into-calibre). Do steps 1-4 below in the
+browser when it asks, then:
+
+```bash
+python3 economist_setup.py                    # Linux, macOS
+.venv\Scripts\python.exe economist_setup.py   # Windows
+```
+
+On Linux the clipboard needs `wl-clipboard` or `xclip`; without either, save
+the copy to a file and pass `--from-file <file>`.
+
+The manual steps:
 
 > **`__cf_bm` is HttpOnly**, so `document.cookie` in the Console cannot see it.
 > It appears only in the Network panel's request headers.
@@ -318,11 +336,12 @@ Every one of these caused a silent failure during development.
 | Path | Purpose |
 |---|---|
 | `economist.recipe` | The recipe. Paste into calibre as a custom news source. |
+| `economist_setup.py` | Interactive one-time setup: import from the clipboard, `--seed`, recipe onto the clipboard. |
 | `economist_session.py` | Entry point: freshness logic, cookie-file contract, reporting, config-dir discovery. |
 | `economist_chrome.py` | The navigator and fetch session: drives Chromium over CDP; `--serve` leaves it running. Contains a minimal RFC 6455 WebSocket client so there is nothing to install. |
 | `import_curl_cookies.py` | One-time import from a DevTools "Copy as cURL". |
 | `check_economist_access.py` | Standalone diagnostic: does the served session reach the site? Run it after `--serve`. |
-| `test_*.py`, `conftest.py` | Unit tests (116). `conftest.py` loads the recipe with calibre's imports stubbed so it can be tested. Run via `scripts/gates.sh` |
+| `test_*.py`, `conftest.py` | Unit tests (143). `conftest.py` loads the recipe with calibre's imports stubbed so it can be tested. Run via `scripts/gates.sh` |
 | `scripts/gates.sh` | The merge gates: `ruff`, `bandit`, `pytest`. CI runs exactly this script |
 | `requirements-dev.txt` | Hash-locked dev tools (pytest, ruff, bandit). Not needed at run time |
 
@@ -363,12 +382,10 @@ if you would rather keep it somewhere else.
 
 ## Windows
 
-**Verified so far:** Windows 11, Google Chrome 155, Python 3.13 in a uv
-virtual environment: the browser launches with DevTools, minimizes, and is shut
-down cleanly by `--stop`. The unit tests pass on Windows. **A full edition
-download has not been verified yet.** This approach depends on DataDome
-accepting the user's own browser, which has been observed on Linux and macOS
-only.
+**Verified on:** Windows 11 Pro, calibre 9.14, Google Chrome 155, Python 3.13
+in a uv virtual environment: a full end-to-end edition download, set up with
+`economist_setup.py`. The unit tests pass on Windows; those that assert POSIX
+permission bits are skipped there.
 
 What differs, all selected automatically by `sys.platform == 'win32'`:
 
