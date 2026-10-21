@@ -15,6 +15,7 @@ All notable changes to this project are documented here. Format: [Keep a Changel
 - A DataDome captcha (`'rt':'c'`) now fails immediately with a "log in again, then `--seed`" message instead of a bare `HTTP Error 403`.
 
 ### Changed
+- README cut down to what is needed to set up and use the recipe: how it works, requirements, setup through `economist_setup.py`, everyday use, configuration, troubleshooting, security, files. The history, design notes and platform anecdotes are gone; this changelog keeps the history.
 - README states plainly that Linux is the only supported platform and adds a *Porting to macOS and Windows* section naming the exact blockers found by an audit, so the work is pickup-able by someone who can test on those platforms.
 - `ECONOMIST_BROWSER_CMD` is parsed with `shlex.split()` instead of being split on whitespace, so a quoted executable path with spaces works (#9). An empty value now falls back to the default browser instead of crashing.
 - README: Requirements now lists Linux or macOS; the porting section becomes a *macOS* section (what differs, where it was verified) and a *Porting to Windows* section.
