@@ -98,8 +98,10 @@ def load_credentials(path: str = COOKIE_FILE) -> Credentials:
             f'Then: chmod 600 {path}'
         )
 
+    # Windows has no POSIX permission bits (every writable file stats as 0666),
+    # so this check is POSIX-only; there the user profile's ACL protects it.
     mode = stat.S_IMODE(os.stat(path).st_mode)
-    if mode & (stat.S_IRWXG | stat.S_IRWXO):
+    if sys.platform != 'win32' and mode & (stat.S_IRWXG | stat.S_IRWXO):
         fail_config(
             f'{path} is group/world accessible (mode {mode:04o}).\n'
             f'These cookies are credentials. Fix with: chmod 600 {path}'

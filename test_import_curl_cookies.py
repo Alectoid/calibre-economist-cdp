@@ -6,6 +6,7 @@ All fixtures use synthetic cookie values; no real credentials appear here.
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
@@ -54,6 +55,30 @@ def test_handles_line_continuations() -> None:
     assert parse_curl(cmd)['user_agent'] == UA
 
 
+def test_handles_a_windows_clipboard_paste_with_crlf() -> None:
+    cmd = f"curl 'https://x' \\\r\n  -H 'user-agent: {UA}' \\\r\n  -H 'cookie: __cf_bm=z; a=1'\r\n"
+    got = parse_curl(cmd)
+    assert got['user_agent'] == UA
+    assert got['cookie_header'] == '__cf_bm=z; a=1'
+
+
+def test_rejects_the_cmd_flavour_of_copy_as_curl() -> None:
+    cmd = f'curl ^"https://x^" -H ^"user-agent: {UA}^" -b ^"__cf_bm=z; a=1^"'
+    with pytest.raises(SystemExit):
+        parse_curl(cmd)
+
+
+def test_reads_an_export_saved_with_a_bom(tmp_path, monkeypatch) -> None:
+    """Windows PowerShell 5.1 writes UTF-8 with a BOM, which would hide 'curl'."""
+    src = tmp_path / 'eco-curl.txt'
+    src.write_bytes(b'\xef\xbb\xbf' + curl_cmd().encode())
+    written = []
+    monkeypatch.setattr(mod, 'write_cookie_file', lambda harvest: written.append(harvest))
+    assert mod.main(['import_curl_cookies.py', str(src)]) == 0
+    assert written[0]['user_agent'] == UA
+    assert not src.exists()
+
+
 def test_rejects_input_that_is_not_a_curl_command() -> None:
     with pytest.raises(SystemExit):
         parse_curl('cf_clearance=abc123; datadome=xyz')
@@ -76,7 +101,8 @@ def test_written_file_is_mode_600_and_round_trips(tmp_path, monkeypatch) -> None
         {'user_agent': UA, 'cookie_header': 'cf_clearance=abc; datadome=xyz'},
         str(target),
     )
-    assert oct(os.stat(target).st_mode)[-3:] == '600'
+    if sys.platform != 'win32':     # no permission bits to check on Windows
+        assert oct(os.stat(target).st_mode)[-3:] == '600'
 
     # The checker must be able to read back exactly what the importer wrote.
     monkeypatch.syspath_prepend(os.path.dirname(os.path.abspath(mod.__file__)))

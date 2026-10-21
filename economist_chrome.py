@@ -71,11 +71,30 @@ FLATPAK_APP = 'io.github.ungoogled_software.ungoogled_chromium'
 # The default drives the ungoogled-chromium flatpak.
 def parse_browser_command(value: str) -> list[str]:
     """Parse the browser command without breaking executable paths with spaces."""
+    if sys.platform == 'win32':
+        # POSIX shlex treats backslashes as escapes and would eat the ones in
+        # C:\Program Files\... ; Windows mode keeps them but also keeps quotes.
+        return [t[1:-1] if len(t) > 1 and t[0] == t[-1] == '"' else t
+                for t in shlex.split(value, posix=False)]
     return shlex.split(value)
 
 
 def default_browser_command() -> list[str]:
     """Return a usable browser command for the current host when possible."""
+    if sys.platform == 'win32':
+        # Per-machine installs land in Program Files, per-user ones in LOCALAPPDATA.
+        roots = [os.environ.get(v) for v in ('PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA')]
+        for root in filter(None, roots):
+            for rel in (r'Google\Chrome\Application\chrome.exe',
+                        r'Chromium\Application\chrome.exe'):
+                executable = os.path.join(root, rel)
+                if os.path.isfile(executable):
+                    return [executable]
+        for executable in ('chrome', 'chromium'):
+            resolved = shutil.which(executable)
+            if resolved:
+                return [resolved]
+        return ['chrome.exe']
     if sys.platform == 'darwin':
         mac_app_browsers = (
             '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -99,9 +118,16 @@ BROWSER_CMD = parse_browser_command(os.environ['ECONOMIST_BROWSER_CMD']) \
 # Chromium on a profile that is already open exits immediately. Override with
 # ECONOMIST_CHROME_PROFILE. The default sits inside the flatpak's own tree so
 # the sandboxed browser can write it; a non-flatpak browser wants a plain path.
+# On Windows that is under LOCALAPPDATA, beside (not inside) Chrome's own data.
+def default_profile_dir() -> str:
+    if sys.platform == 'win32':
+        return os.path.join(os.environ.get('LOCALAPPDATA') or os.path.expanduser('~/AppData/Local'),
+                            'calibre-economist-cdp', 'chrome-profile')
+    return f'~/.var/app/{FLATPAK_APP}/config/chromium-economist'
+
+
 CHROME_PROFILE = os.path.expanduser(os.environ.get(
-    'ECONOMIST_CHROME_PROFILE',
-    f'~/.var/app/{FLATPAK_APP}/config/chromium-economist'))
+    'ECONOMIST_CHROME_PROFILE', default_profile_dir()))
 STATUS_FILE = os.path.join(CHROME_PROFILE, 'last-navigation.json')
 # Where --serve records the live CDP endpoint for the recipe to connect to.
 #
@@ -286,6 +312,19 @@ class CDP:
 # Browser lifecycle
 # --------------------------------------------------------------------------
 
+def detached() -> dict:
+    """Popen arguments that let a child outlive this process.
+
+    On POSIX that is a new session. Windows has no sessions, and a child there
+    already outlives its parent; what it needs instead is to not open a console
+    window of its own, because calibre (a GUI program) gave us none to share.
+    """
+    if sys.platform == 'win32':
+        return {'creationflags': subprocess.CREATE_NO_WINDOW
+                | subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {'start_new_session': True}
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(('127.0.0.1', 0))
@@ -323,7 +362,7 @@ def launch_browser(port: int) -> subprocess.Popen:
     ]
     return subprocess.Popen(
         cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        start_new_session=True)
+        **detached())
 
 
 def wait_for_cdp(port: int, proc: subprocess.Popen) -> str:
@@ -385,7 +424,7 @@ def start_reaper(port: int, pid: int) -> None:
     subprocess.Popen(
         [sys.executable, os.path.abspath(__file__), '--reap', str(port), str(pid)],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        start_new_session=True)
+        **detached())
 
 
 REAP_POLL_S = 30.0
@@ -437,6 +476,21 @@ def pid_is_our_browser(pid: int) -> bool:
         except (OSError, subprocess.SubprocessError):
             return False
         return result.returncode == 0 and CHROME_PROFILE in result.stdout
+    if sys.platform == 'win32':
+        # No /proc and no ps; wmic is gone from current Windows. CIM through
+        # PowerShell reports the command line. The pid is an int, so the filter
+        # string cannot be used to inject anything.
+        powershell = os.path.join(os.environ.get('SYSTEMROOT', r'C:\Windows'), 'System32',
+                                  'WindowsPowerShell', 'v1.0', 'powershell.exe')
+        query = f'(Get-CimInstance Win32_Process -Filter "ProcessId={int(pid)}").CommandLine'
+        try:
+            result = subprocess.run(  # nosec B603 - fixed absolute path, argv list
+                [powershell, '-NoProfile', '-NonInteractive', '-Command', query],
+                capture_output=True, text=True, timeout=30, check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return result.returncode == 0 and CHROME_PROFILE in result.stdout
     try:
         with open(f'/proc/{pid}/cmdline', 'rb') as f:
             cmdline = f.read().decode('utf-8', 'replace')
@@ -465,7 +519,7 @@ def stop_serving() -> int:
         pid = info.get('pid')
         if pid and pid_is_our_browser(pid):
             try:
-                os.kill(pid, 15)
+                os.kill(pid, 15)    # TerminateProcess on Windows
             except OSError as e:
                 log.debug('could not signal pid %s: %r', pid, e)
     else:
@@ -666,7 +720,7 @@ def run(seed: bool = False, serve: bool = False) -> int:
                   f'(DataDome {kind}, rt={rt})', flush=True)
             if rt == 'c':
                 print('A hard block means the device is burned: log in again in '
-                      'ungoogled-chromium and re-run with --seed.', file=sys.stderr)
+                      'the browser and re-run with --seed.', file=sys.stderr)
             return 1
 
         cookies = collect_cookies(cdp, session)

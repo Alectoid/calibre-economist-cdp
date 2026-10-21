@@ -63,7 +63,7 @@ def calibre_config_dir() -> str:
     """calibre's config directory, wherever this calibre keeps it.
 
     Order: the CALIBRE_CONFIG_DIRECTORY override calibre itself honours, then
-    the flatpak location if it exists, then macOS's or Linux's native default.
+    the flatpak location if it exists, then the platform's native default.
     """
     env = os.environ.get('CALIBRE_CONFIG_DIRECTORY')
     if env:
@@ -72,6 +72,9 @@ def calibre_config_dir() -> str:
         return FLATPAK_CONFIG_DIR
     if sys.platform == 'darwin':
         return MACOS_CONFIG_DIR
+    if sys.platform == 'win32':
+        return os.path.join(os.environ.get('APPDATA') or os.path.expanduser('~/AppData/Roaming'),
+                            'calibre')
     return os.path.expanduser('~/.config/calibre')
 
 

@@ -13,6 +13,10 @@ Usage::
     wl-paste > /run/user/$(id -u)/eco-curl.txt
     python3 import_curl_cookies.py /run/user/$(id -u)/eco-curl.txt
 
+    # Windows, PowerShell (use "Copy as cURL (bash)", not the cmd flavour)
+    Get-Clipboard -Raw | Set-Content -NoNewline "$env:TEMP\\eco-curl.txt"
+    .venv\\Scripts\\python.exe import_curl_cookies.py "$env:TEMP\\eco-curl.txt"
+
 SECURITY: this script never prints cookie values. It reports names and value
 lengths only, writes the target file with mode 600, and shreds its input.
 """
@@ -113,9 +117,15 @@ def parse_curl(text: str) -> Harvest:
     DevTools emits POSIX-shell quoting, so shlex handles the escaping (including
     the '\\'' sequences that appear inside cookie values) correctly.
     """
-    text = text.strip()
+    # A Windows clipboard paste arrives with CRLF line endings.
+    text = text.replace('\r\n', '\n').strip()
     if not text.startswith('curl'):
         fail('that does not look like a "Copy as cURL" command (it must start with "curl")')
+    if '^"' in text:
+        # Chrome on Windows offers cURL (cmd) and cURL (bash). The cmd flavour
+        # escapes with ^, which shlex would carry straight into the cookies.
+        fail('that is "Copy as cURL (cmd)". Copy the request again with '
+             '"Copy as cURL (bash)" instead.')
 
     # Join shell line continuations, then normalise ANSI-C quoting, before
     # tokenising.
@@ -219,7 +229,8 @@ def main(argv: list[str]) -> int:
     # Shred the input whatever happens: on the failure paths it still holds a
     # full set of live session cookies.
     try:
-        with open(src, encoding='utf-8', errors='replace') as f:
+        # utf-8-sig: Windows PowerShell 5.1 writes a BOM with -Encoding utf8.
+        with open(src, encoding='utf-8-sig', errors='replace') as f:
             harvest = parse_curl(f.read())
     except BaseException:
         shred(src)
