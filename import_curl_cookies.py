@@ -117,8 +117,10 @@ def parse_curl(text: str) -> Harvest:
     DevTools emits POSIX-shell quoting, so shlex handles the escaping (including
     the '\\'' sequences that appear inside cookie values) correctly.
     """
-    # A Windows clipboard paste arrives with CRLF line endings.
-    text = text.replace('\r\n', '\n').strip()
+    # A Windows paste arrives with CRLF line endings, and a file saved by
+    # Windows PowerShell 5.1 with a BOM. Normalise both here, where every input
+    # passes, rather than at each reader.
+    text = text.lstrip('﻿').replace('\r\n', '\n').strip()
     if not text.startswith('curl'):
         fail('that does not look like a "Copy as cURL" command (it must start with "curl")')
     if '^"' in text:
@@ -205,6 +207,22 @@ def write_cookie_file(harvest: Harvest, path: str = COOKIE_FILE) -> None:
     os.chmod(path, 0o600)
 
 
+def save_and_report(harvest: Harvest, path: str = COOKIE_FILE) -> None:
+    """Write the cookie file and report what went in - names and lengths only."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    write_cookie_file(harvest, path)
+    cookies = summarise(harvest['cookie_header'])
+
+    print(f'Wrote {path} (mode 600)')
+    print(f'User-Agent: {harvest["user_agent"]}')
+    print(f'Cookies: {len(cookies)} (names and lengths only)')
+    for name, length in cookies:
+        print(f'    {name:<32s} len={length}')
+    present = {n for n, _ in cookies}
+    for wanted in ('cf_clearance', 'datadome'):
+        print(f'    -> {wanted}: {"present" if wanted in present else "MISSING"}')
+
+
 def shred(path: str) -> None:
     """Overwrite then remove the input file so the cookies do not linger."""
     try:
@@ -229,25 +247,13 @@ def main(argv: list[str]) -> int:
     # Shred the input whatever happens: on the failure paths it still holds a
     # full set of live session cookies.
     try:
-        # utf-8-sig: Windows PowerShell 5.1 writes a BOM with -Encoding utf8.
-        with open(src, encoding='utf-8-sig', errors='replace') as f:
+        with open(src, encoding='utf-8', errors='replace') as f:
             harvest = parse_curl(f.read())
     except BaseException:
         shred(src)
         raise
 
-    write_cookie_file(harvest)
-    cookies = summarise(harvest['cookie_header'])
-
-    print(f'Wrote {COOKIE_FILE} (mode 600)')
-    print(f'User-Agent: {harvest["user_agent"]}')
-    print(f'Cookies: {len(cookies)} (names and lengths only)')
-    for name, length in cookies:
-        print(f'    {name:<32s} len={length}')
-    present = {n for n, _ in cookies}
-    for wanted in ('cf_clearance', 'datadome'):
-        print(f'    -> {wanted}: {"present" if wanted in present else "MISSING"}')
-
+    save_and_report(harvest)
     shred(src)
     print(f'Shredded {src}')
     return 0

@@ -34,6 +34,7 @@ import economist_session  # noqa: E402
 import import_curl_cookies  # noqa: E402
 
 RECIPE = os.path.join(HERE, 'economist.recipe')
+# The same venv the recipe's _python() looks for; keep the two in step.
 VENV_PYTHON = os.path.join(HERE, '.venv', 'Scripts', 'python.exe')
 
 
@@ -41,71 +42,59 @@ VENV_PYTHON = os.path.join(HERE, '.venv', 'Scripts', 'python.exe')
 # Clipboard
 # --------------------------------------------------------------------------
 
-def _powershell() -> str:
-    return os.path.join(os.environ.get('SYSTEMROOT', r'C:\Windows'), 'System32',
-                        'WindowsPowerShell', 'v1.0', 'powershell.exe')
+# Per direction: the Windows PowerShell one-liner, then the first tool found
+# on PATH. pb* tools are macOS's only option and count nowhere else; wl-* tools
+# only count in a Wayland session.
+CLIPBOARD = {
+    'paste': (
+        '[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw',
+        [('pbpaste', []), ('wl-paste', ['--no-newline']),
+         ('xclip', ['-o', '-selection', 'clipboard']), ('xsel', ['--clipboard', '--output'])],
+    ),
+    'copy': (
+        '[Console]::InputEncoding = [Text.Encoding]::UTF8; '
+        'Set-Clipboard -Value ([Console]::In.ReadToEnd())',
+        [('pbcopy', []), ('wl-copy', []),
+         ('xclip', ['-i', '-selection', 'clipboard']), ('xsel', ['--clipboard', '--input'])],
+    ),
+}
 
 
-def paste_command() -> list[str] | None:
-    """The command that prints the clipboard, or None if there is none."""
+def clipboard_command(direction: str) -> list[str] | None:
+    """argv that pastes to stdout or copies from stdin, or None if there is none."""
+    script, tools = CLIPBOARD[direction]
     if sys.platform == 'win32':
-        return [_powershell(), '-NoProfile', '-NonInteractive', '-Command',
-                '[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw']
-    if sys.platform == 'darwin':
-        tool = shutil.which('pbpaste')
-        return [tool] if tool else None
-    if os.environ.get('WAYLAND_DISPLAY') and shutil.which('wl-paste'):
-        return [shutil.which('wl-paste'), '--no-newline']
-    if shutil.which('xclip'):
-        return [shutil.which('xclip'), '-o', '-selection', 'clipboard']
-    if shutil.which('xsel'):
-        return [shutil.which('xsel'), '--clipboard', '--output']
+        return economist_chrome.powershell(script)
+    macos = sys.platform == 'darwin'
+    wayland = bool(os.environ.get('WAYLAND_DISPLAY'))
+    for name, args in tools:
+        if name.startswith('pb') != macos or (name.startswith('wl-') and not wayland):
+            continue
+        path = shutil.which(name)
+        if path:
+            return [path, *args]
     return None
-
-
-def copy_command() -> list[str] | None:
-    """The command that reads stdin into the clipboard, or None if there is none."""
-    if sys.platform == 'win32':
-        return [_powershell(), '-NoProfile', '-NonInteractive', '-Command',
-                '[Console]::InputEncoding = [Text.Encoding]::UTF8; '
-                'Set-Clipboard -Value ([Console]::In.ReadToEnd())']
-    if sys.platform == 'darwin':
-        tool = shutil.which('pbcopy')
-        return [tool] if tool else None
-    if os.environ.get('WAYLAND_DISPLAY') and shutil.which('wl-copy'):
-        return [shutil.which('wl-copy')]
-    if shutil.which('xclip'):
-        return [shutil.which('xclip'), '-i', '-selection', 'clipboard']
-    if shutil.which('xsel'):
-        return [shutil.which('xsel'), '--clipboard', '--input']
-    return None
-
-
-def _no_window() -> dict:
-    """Keep PowerShell from flashing a console window on Windows."""
-    if sys.platform == 'win32':
-        return {'creationflags': subprocess.CREATE_NO_WINDOW}
-    return {}
 
 
 def read_clipboard() -> str:
-    cmd = paste_command()
+    cmd = clipboard_command('paste')
     if not cmd:
         raise OSError('no clipboard tool found (install wl-clipboard or xclip, '
                       'or use --from-file)')
-    result = subprocess.run(cmd, capture_output=True, timeout=15, check=False, **_no_window())
+    result = subprocess.run(cmd, capture_output=True, timeout=15, check=False,
+                            **economist_chrome.no_window())
     if result.returncode != 0:
         raise OSError('reading the clipboard failed')
-    return result.stdout.decode('utf-8-sig', 'replace')
+    return result.stdout.decode('utf-8', 'replace')
 
 
 def write_clipboard(text: str) -> bool:
-    cmd = copy_command()
+    cmd = clipboard_command('copy')
     if not cmd:
         return False
     try:
         result = subprocess.run(cmd, input=text.encode('utf-8'), capture_output=True,
-                                timeout=15, check=False, **_no_window())
+                                timeout=15, check=False, **economist_chrome.no_window())
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0
@@ -163,12 +152,13 @@ def check_environment() -> bool:
     return ok
 
 
-CURL_HELP = """\
+CURL_HELP = f"""\
   In Chrome:
     1. Open https://www.economist.com/weeklyedition and log in.
     2. F12 -> Network, clear the filter box, click "Doc".
     3. Reload TWICE with Ctrl+Shift+R.
-    4. Right-click the top document row -> Copy -> {flavour}."""
+    4. Right-click the top document row -> Copy -> \
+{'Copy as cURL (bash)' if sys.platform == 'win32' else 'Copy as cURL'}."""
 
 
 def import_session(from_file: str | None) -> bool:
@@ -177,13 +167,12 @@ def import_session(from_file: str | None) -> bool:
             '  A saved session already exists. Replace it?'):
         return True
 
-    flavour = 'Copy as cURL (bash)' if sys.platform == 'win32' else 'Copy as cURL'
     while True:
         if from_file:
-            with open(from_file, encoding='utf-8-sig', errors='replace') as f:
+            with open(from_file, encoding='utf-8', errors='replace') as f:
                 text = f.read()
         else:
-            print(CURL_HELP.format(flavour=flavour))
+            print(CURL_HELP)
             input('  Press Enter once it is on the clipboard...')
             try:
                 text = read_clipboard()
@@ -199,10 +188,7 @@ def import_session(from_file: str | None) -> bool:
             if from_file or not ask('  Try copying again?'):
                 return False
 
-    os.makedirs(economist_session.CONFIG_DIR, exist_ok=True)
-    import_curl_cookies.write_cookie_file(harvest, economist_session.COOKIE_FILE)
-    cookies = import_curl_cookies.summarise(harvest['cookie_header'])
-    print(f'  ok     {len(cookies)} cookies saved to {economist_session.COOKIE_FILE}')
+    import_curl_cookies.save_and_report(harvest, economist_session.COOKIE_FILE)
     if from_file and ask(f'  Delete {from_file}? It holds your login.'):
         import_curl_cookies.shred(from_file)
     return True
@@ -210,8 +196,7 @@ def import_session(from_file: str | None) -> bool:
 
 def seed() -> bool:
     print('  A browser window opens briefly. This takes up to a minute.', flush=True)
-    economist_session.record_location()
-    rc = economist_session.run_refresh(seed=True)
+    rc = economist_session.main(['economist_session.py', '--seed'])
     if rc != 0:
         print('\n  Seeding failed. Wait a while before trying again: repeated '
               'attempts can earn a captcha.\n  If it said rt=c, log in again in '
@@ -228,12 +213,12 @@ def hand_over_recipe() -> None:
               'cURL export there)')
     else:
         print(f'  Copy the contents of {RECIPE} yourself.')
-    print("""
+    print(f"""
   In calibre:
     1. Fetch news -> Add a custom news source -> Switch to advanced mode
-    2. Delete the template, paste{what}, title it "The Economist (CDP)"
-    3. Add/Update recipe, then Download now (or schedule) THAT recipe""".format(
-        what=' the clipboard' if copied else ' the recipe'))
+    2. Delete the template, paste {'the clipboard' if copied else 'the recipe'}, \
+title it "The Economist (CDP)"
+    3. Add/Update recipe, then Download now (or schedule) THAT recipe""")
 
 
 def main(argv: list[str] | None = None) -> int:

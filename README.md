@@ -341,7 +341,7 @@ Every one of these caused a silent failure during development.
 | `economist_chrome.py` | The navigator and fetch session: drives Chromium over CDP; `--serve` leaves it running. Contains a minimal RFC 6455 WebSocket client so there is nothing to install. |
 | `import_curl_cookies.py` | One-time import from a DevTools "Copy as cURL". |
 | `check_economist_access.py` | Standalone diagnostic: does the served session reach the site? Run it after `--serve`. |
-| `test_*.py`, `conftest.py` | Unit tests (143). `conftest.py` loads the recipe with calibre's imports stubbed so it can be tested. Run via `scripts/gates.sh` |
+| `test_*.py`, `conftest.py` | Unit tests (144). `conftest.py` loads the recipe with calibre's imports stubbed so it can be tested. Run via `scripts/gates.sh` |
 | `scripts/gates.sh` | The merge gates: `ruff`, `bandit`, `pytest`. CI runs exactly this script |
 | `requirements-dev.txt` | Hash-locked dev tools (pytest, ruff, bandit). Not needed at run time |
 

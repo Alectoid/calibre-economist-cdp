@@ -6,9 +6,10 @@ All fixtures use synthetic cookie values; no real credentials appear here.
 from __future__ import annotations
 
 import os
-import sys
 
 import pytest
+
+from economist_session import HAS_MODE_BITS
 
 import import_curl_cookies as mod
 from import_curl_cookies import parse_curl, summarise, write_cookie_file
@@ -73,7 +74,7 @@ def test_reads_an_export_saved_with_a_bom(tmp_path, monkeypatch) -> None:
     src = tmp_path / 'eco-curl.txt'
     src.write_bytes(b'\xef\xbb\xbf' + curl_cmd().encode())
     written = []
-    monkeypatch.setattr(mod, 'write_cookie_file', lambda harvest: written.append(harvest))
+    monkeypatch.setattr(mod, 'save_and_report', lambda harvest: written.append(harvest))
     assert mod.main(['import_curl_cookies.py', str(src)]) == 0
     assert written[0]['user_agent'] == UA
     assert not src.exists()
@@ -101,7 +102,7 @@ def test_written_file_is_mode_600_and_round_trips(tmp_path, monkeypatch) -> None
         {'user_agent': UA, 'cookie_header': 'cf_clearance=abc; datadome=xyz'},
         str(target),
     )
-    if sys.platform != 'win32':     # no permission bits to check on Windows
+    if HAS_MODE_BITS:     # no permission bits to check on Windows
         assert oct(os.stat(target).st_mode)[-3:] == '600'
 
     # The checker must be able to read back exactly what the importer wrote.

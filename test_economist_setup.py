@@ -29,7 +29,7 @@ def answers(monkeypatch, *replies):
 
 def test_windows_reads_the_clipboard_through_powershell(monkeypatch):
     monkeypatch.setattr(mod.sys, 'platform', 'win32')
-    cmd = mod.paste_command()
+    cmd = mod.clipboard_command('paste')
     assert cmd[0].endswith('powershell.exe')
     assert 'Get-Clipboard -Raw' in cmd[-1]
 
@@ -38,8 +38,8 @@ def test_wayland_prefers_wl_paste(monkeypatch):
     monkeypatch.setattr(mod.sys, 'platform', 'linux')
     monkeypatch.setenv('WAYLAND_DISPLAY', 'wayland-0')
     monkeypatch.setattr(mod.shutil, 'which', lambda t: f'/usr/bin/{t}')
-    assert mod.paste_command() == ['/usr/bin/wl-paste', '--no-newline']
-    assert mod.copy_command() == ['/usr/bin/wl-copy']
+    assert mod.clipboard_command('paste') == ['/usr/bin/wl-paste', '--no-newline']
+    assert mod.clipboard_command('copy') == ['/usr/bin/wl-copy']
 
 
 def test_x11_falls_back_to_xclip(monkeypatch):
@@ -47,13 +47,22 @@ def test_x11_falls_back_to_xclip(monkeypatch):
     monkeypatch.delenv('WAYLAND_DISPLAY', raising=False)
     monkeypatch.setattr(mod.shutil, 'which',
                         lambda t: '/usr/bin/xclip' if t == 'xclip' else None)
-    assert mod.paste_command() == ['/usr/bin/xclip', '-o', '-selection', 'clipboard']
+    assert mod.clipboard_command('paste') == ['/usr/bin/xclip', '-o', '-selection', 'clipboard']
+
+
+def test_pbpaste_is_used_on_macos_and_only_there(monkeypatch):
+    monkeypatch.delenv('WAYLAND_DISPLAY', raising=False)
+    monkeypatch.setattr(mod.shutil, 'which', lambda t: f'/usr/bin/{t}')
+    monkeypatch.setattr(mod.sys, 'platform', 'darwin')
+    assert mod.clipboard_command('copy') == ['/usr/bin/pbcopy']
+    monkeypatch.setattr(mod.sys, 'platform', 'linux')
+    assert mod.clipboard_command('copy') == ['/usr/bin/xclip', '-i', '-selection', 'clipboard']
 
 
 def test_no_clipboard_tool_is_reported_not_crashed(monkeypatch):
     monkeypatch.setattr(mod.sys, 'platform', 'linux')
     monkeypatch.setattr(mod.shutil, 'which', lambda t: None)
-    assert mod.paste_command() is None
+    assert mod.clipboard_command('paste') is None
     with pytest.raises(OSError):
         mod.read_clipboard()
 

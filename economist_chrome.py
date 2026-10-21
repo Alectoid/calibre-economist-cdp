@@ -312,15 +312,32 @@ class CDP:
 # Browser lifecycle
 # --------------------------------------------------------------------------
 
+def no_window() -> dict:
+    """Popen arguments that keep a console program from opening a window.
+
+    On Windows a console child of a process without a console (calibre is a
+    GUI program) gets a window of its own. Elsewhere this is a no-op.
+    """
+    if sys.platform == 'win32':
+        return {'creationflags': subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
+def powershell(script: str) -> list[str]:
+    """argv that runs a PowerShell one-liner, by absolute path and without a profile."""
+    exe = os.path.join(os.environ.get('SYSTEMROOT', r'C:\Windows'), 'System32',
+                       'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    return [exe, '-NoProfile', '-NonInteractive', '-Command', script]
+
+
 def detached() -> dict:
     """Popen arguments that let a child outlive this process.
 
     On POSIX that is a new session. Windows has no sessions, and a child there
-    already outlives its parent; what it needs instead is to not open a console
-    window of its own, because calibre (a GUI program) gave us none to share.
+    already outlives its parent; it only needs to stay windowless.
     """
     if sys.platform == 'win32':
-        return {'creationflags': subprocess.CREATE_NO_WINDOW
+        return {'creationflags': no_window()['creationflags']
                 | subprocess.CREATE_NEW_PROCESS_GROUP}
     return {'start_new_session': True}
 
@@ -480,14 +497,11 @@ def pid_is_our_browser(pid: int) -> bool:
         # No /proc and no ps; wmic is gone from current Windows. CIM through
         # PowerShell reports the command line. The pid is an int, so the filter
         # string cannot be used to inject anything.
-        powershell = os.path.join(os.environ.get('SYSTEMROOT', r'C:\Windows'), 'System32',
-                                  'WindowsPowerShell', 'v1.0', 'powershell.exe')
         query = f'(Get-CimInstance Win32_Process -Filter "ProcessId={int(pid)}").CommandLine'
         try:
             result = subprocess.run(  # nosec B603 - fixed absolute path, argv list
-                [powershell, '-NoProfile', '-NonInteractive', '-Command', query],
-                capture_output=True, text=True, timeout=30, check=False,
-                creationflags=subprocess.CREATE_NO_WINDOW)
+                powershell(query), capture_output=True, text=True, timeout=30,
+                check=False, **no_window())
         except (OSError, subprocess.SubprocessError):
             return False
         return result.returncode == 0 and CHROME_PROFILE in result.stdout

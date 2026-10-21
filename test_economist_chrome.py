@@ -310,7 +310,7 @@ def test_cookie_file_round_trips_values_containing_equals(tmp_path, monkeypatch)
     assert session.read_cookie_file() == pairs
 
 
-posix_only = pytest.mark.skipif(sys.platform == 'win32', reason='no POSIX permission bits')
+posix_only = pytest.mark.skipif(not session.HAS_MODE_BITS, reason='no POSIX permission bits')
 
 
 @posix_only
@@ -577,8 +577,8 @@ def test_calibre_config_dir_uses_appdata_on_windows(monkeypatch, tmp_path):
     monkeypatch.delenv('CALIBRE_CONFIG_DIRECTORY', raising=False)
     monkeypatch.setattr(session, 'FLATPAK_CONFIG_DIR', str(tmp_path / 'absent'))
     monkeypatch.setattr(session.sys, 'platform', 'win32')
-    monkeypatch.setenv('APPDATA', str(tmp_path / 'Roaming'))
-    assert session.calibre_config_dir() == os.path.join(str(tmp_path / 'Roaming'), 'calibre')
+    monkeypatch.setattr(session, 'WINDOWS_CONFIG_DIR', str(tmp_path / 'Roaming' / 'calibre'))
+    assert session.calibre_config_dir() == str(tmp_path / 'Roaming' / 'calibre')
 
 
 def test_windows_profile_lives_under_localappdata(monkeypatch, tmp_path):

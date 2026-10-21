@@ -11,10 +11,11 @@ from __future__ import annotations
 import base64
 import json
 import os
-import sys
 import urllib.error
 
 import pytest
+
+from economist_session import HAS_MODE_BITS
 
 
 # --------------------------------------------------------------------------
@@ -301,7 +302,7 @@ def test_pointer_file_is_used_when_no_env_var(recipe, monkeypatch, tmp_path):
     assert recipe._find_session_script() == '/opt/economist/economist_session.py'
 
 
-@pytest.mark.skipif(sys.platform == 'win32', reason='no POSIX permission bits')
+@pytest.mark.skipif(not HAS_MODE_BITS, reason='no POSIX permission bits')
 @pytest.mark.parametrize('mode', [0o646, 0o664, 0o666])
 def test_group_or_world_writable_pointer_is_refused(recipe, monkeypatch, tmp_path, mode):
     """The path in this file is imported and executed inside calibre, so a

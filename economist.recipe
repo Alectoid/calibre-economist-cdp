@@ -58,10 +58,8 @@ def _calibre_config_dir():
     return os.path.expanduser('~/.config/calibre')
 
 
-# Windows has no POSIX permission bits: os.stat() reports every writable file as
-# 0666 and os.chmod() only toggles read-only. The mode checks below would refuse
-# every file there, so they apply on POSIX only. On Windows the protection is the
-# ACL on the user's own profile directory, where all of these files live.
+# Mirrors economist_session.HAS_MODE_BITS: Windows reports every writable file
+# as 0666, so the mode checks below apply on POSIX only.
 HAS_MODE_BITS = sys.platform != 'win32'
 
 
