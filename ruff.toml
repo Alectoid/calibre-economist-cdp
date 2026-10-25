@@ -13,3 +13,4 @@ select = ["F", "E9", "B", "S"]
 # shell string; the browser command comes from the user's own environment.
 "economist.recipe" = ["S603"]
 "economist_chrome.py" = ["S603"]  # every subprocess call is an argv list; BROWSER_CMD comes from the user's own environment
+"economist_setup.py" = ["S603"]  # argv lists of resolved clipboard tools and flatpak, never a shell

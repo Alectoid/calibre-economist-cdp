@@ -33,7 +33,7 @@ INDEX_URL = 'https://www.economist.com/weeklyedition'
 COOKIE_DOMAIN = '.economist.com'
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from economist_session import COOKIE_FILE  # noqa: E402  same config-dir logic everywhere
+from economist_session import COOKIE_FILE, HAS_MODE_BITS  # noqa: E402  same config-dir logic everywhere
 
 # Markers proving we got an interstitial rather than the real page.
 CHALLENGE_MARKERS: tuple[bytes, ...] = (
@@ -99,7 +99,7 @@ def load_credentials(path: str = COOKIE_FILE) -> Credentials:
         )
 
     mode = stat.S_IMODE(os.stat(path).st_mode)
-    if mode & (stat.S_IRWXG | stat.S_IRWXO):
+    if HAS_MODE_BITS and mode & (stat.S_IRWXG | stat.S_IRWXO):
         fail_config(
             f'{path} is group/world accessible (mode {mode:04o}).\n'
             f'These cookies are credentials. Fix with: chmod 600 {path}'

@@ -14,6 +14,7 @@ import json
 import os
 import stat
 import struct
+import sys
 import time
 
 import pytest
@@ -309,6 +310,10 @@ def test_cookie_file_round_trips_values_containing_equals(tmp_path, monkeypatch)
     assert session.read_cookie_file() == pairs
 
 
+posix_only = pytest.mark.skipif(not session.HAS_MODE_BITS, reason='no POSIX permission bits')
+
+
+@posix_only
 def test_cookie_file_is_written_private(tmp_path, monkeypatch) -> None:
     import os
     import stat
@@ -348,6 +353,7 @@ def test_endpoint_round_trips(tmp_path, monkeypatch) -> None:
     assert mod.read_endpoint()['port'] == 1234
 
 
+@posix_only
 def test_endpoint_is_written_private(tmp_path, monkeypatch) -> None:
     import os
     import stat
@@ -415,6 +421,7 @@ def test_calibre_config_dir_prefers_env(monkeypatch, tmp_path):
     assert session.calibre_config_dir() == str(tmp_path)
 
 
+@pytest.mark.skipif(sys.platform == 'win32', reason='expanduser ignores HOME on Windows')
 def test_calibre_config_dir_falls_back_to_xdg(monkeypatch, tmp_path):
     monkeypatch.delenv('CALIBRE_CONFIG_DIRECTORY', raising=False)
     monkeypatch.setattr(session, 'FLATPAK_CONFIG_DIR', str(tmp_path / 'absent'))
@@ -564,8 +571,81 @@ def test_pid_is_our_browser_uses_ps_on_macos(monkeypatch, tmp_path):
     assert calls[0][0][0] == ['/bin/ps', '-p', '111', '-o', 'command=']
 
 
+# --- Windows ----------------------------------------------------------------
+
+def test_calibre_config_dir_uses_appdata_on_windows(monkeypatch, tmp_path):
+    monkeypatch.delenv('CALIBRE_CONFIG_DIRECTORY', raising=False)
+    monkeypatch.setattr(session, 'FLATPAK_CONFIG_DIR', str(tmp_path / 'absent'))
+    monkeypatch.setattr(session.sys, 'platform', 'win32')
+    monkeypatch.setattr(session, 'WINDOWS_CONFIG_DIR', str(tmp_path / 'Roaming' / 'calibre'))
+    assert session.calibre_config_dir() == str(tmp_path / 'Roaming' / 'calibre')
+
+
+def test_windows_profile_lives_under_localappdata(monkeypatch, tmp_path):
+    monkeypatch.setattr(mod.sys, 'platform', 'win32')
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path))
+    assert mod.default_profile_dir() == os.path.join(
+        str(tmp_path), 'calibre-economist-cdp', 'chrome-profile')
+
+
+def test_windows_default_finds_chrome_in_program_files(monkeypatch, tmp_path):
+    chrome = os.path.join(str(tmp_path), r'Google\Chrome\Application\chrome.exe')
+    monkeypatch.setattr(mod.sys, 'platform', 'win32')
+    monkeypatch.setenv('PROGRAMFILES', str(tmp_path))
+    monkeypatch.setattr(mod.os.path, 'isfile', lambda path: path == chrome)
+    assert mod.default_browser_command() == [chrome]
+
+
+def test_windows_default_falls_back_to_path(monkeypatch):
+    monkeypatch.setattr(mod.sys, 'platform', 'win32')
+    monkeypatch.setattr(mod.os.path, 'isfile', lambda path: False)
+    monkeypatch.setattr(mod.shutil, 'which', lambda executable: {
+        'chromium': r'C:\tools\chromium.exe'}.get(executable))
+    assert mod.default_browser_command() == [r'C:\tools\chromium.exe']
+
+
+def test_windows_browser_command_keeps_backslashes(monkeypatch):
+    monkeypatch.setattr(mod.sys, 'platform', 'win32')
+    command = r'"C:\Program Files\Google\Chrome\Application\chrome.exe" --new-window'
+    assert mod.parse_browser_command(command) == [
+        r'C:\Program Files\Google\Chrome\Application\chrome.exe', '--new-window']
+    assert mod.parse_browser_command(r'C:\Chromium\chrome.exe') == [r'C:\Chromium\chrome.exe']
+
+
+def test_pid_is_our_browser_asks_cim_on_windows(monkeypatch, tmp_path):
+    profile = str(tmp_path / 'chrome-profile')
+    monkeypatch.setattr(mod, 'CHROME_PROFILE', profile)
+    monkeypatch.setattr(mod.sys, 'platform', 'win32')
+    monkeypatch.setattr(mod.subprocess, 'CREATE_NO_WINDOW', 0x08000000, raising=False)
+
+    class Result:
+        returncode = 0
+        stdout = f'"chrome.exe" --user-data-dir={profile} --remote-debugging-port=1234\n'
+
+    calls = []
+    monkeypatch.setattr(mod.subprocess, 'run',
+                        lambda *args, **kwargs: calls.append((args, kwargs)) or Result())
+    assert mod.pid_is_our_browser(111) is True
+    argv = calls[0][0][0]
+    assert argv[0].endswith('powershell.exe')
+    assert 'ProcessId=111' in argv[-1]
+
+    Result.stdout = '"notepad.exe"\n'
+    assert mod.pid_is_our_browser(111) is False
+
+
+def test_detached_children_get_no_console_on_windows(monkeypatch):
+    monkeypatch.setattr(mod.sys, 'platform', 'win32')
+    monkeypatch.setattr(mod.subprocess, 'CREATE_NO_WINDOW', 0x08000000, raising=False)
+    monkeypatch.setattr(mod.subprocess, 'CREATE_NEW_PROCESS_GROUP', 0x200, raising=False)
+    assert mod.detached() == {'creationflags': 0x08000200}
+    monkeypatch.setattr(mod.sys, 'platform', 'linux')
+    assert mod.detached() == {'start_new_session': True}
+
+
 # --- L2: the recipe's session pointer must not be group/world writable ------
 
+@posix_only
 def test_session_pointer_is_written_0644(monkeypatch, tmp_path):
     monkeypatch.setattr(session, 'CONFIG_DIR', str(tmp_path))
     monkeypatch.setattr(session, 'SESSION_POINTER', str(tmp_path / 'p.path'))

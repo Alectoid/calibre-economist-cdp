@@ -32,7 +32,7 @@ downloaded editions are or will be distributed.
 - [Known limitations](#known-limitations)
 - [Files](#files)
 - [macOS](#macos)
-- [Porting to Windows](#porting-to-windows)
+- [Windows](#windows)
 - [Platform notes: flatpak and Fedora Linux](#platform-notes-flatpak-and-fedora-linux)
 - [Attribution and license](#attribution-and-license)
 
@@ -119,15 +119,33 @@ taken from `Browser.getVersion`, so it can never drift from the engine again.
   Google Chrome or Chromium; any other is a one-line environment override (see Setup).
 - Python 3.10+ on the host for the helper scripts. **No third-party packages**:
   the CDP client and its WebSocket implementation are stdlib only.
-- **Linux or macOS.** Linux is where this was built and is tested. macOS
+- **Linux, macOS or Windows.** Linux is where this was built and is tested. macOS
   support was contributed in
   [#9](https://github.com/CR0CKER/calibre-economist-cdp/pull/9) and verified end
-  to end by its author; see [macOS](#macos). Windows does not run yet:
-  [Porting to Windows](#porting-to-windows) lists exactly what stands in the way.
+  to end by its author; see [macOS](#macos). Windows support is verified end
+  to end; see [Windows](#windows).
 
 ## Setup
 
 One time: harvest a browser export, import it, seed the profile.
+
+**Or let the setup tool walk you through it.** `economist_setup.py` checks
+Python, the browser and calibre's config dir (and offers the flatpak grant
+below), reads the "Copy as cURL" export straight from the clipboard so no
+temporary file holds the login, lets a bad copy be retried, runs `--seed`, and
+puts the recipe on the clipboard for [Installing the recipe into
+calibre](#installing-the-recipe-into-calibre). Do steps 1-4 below in the
+browser when it asks, then:
+
+```bash
+python3 economist_setup.py                    # Linux, macOS
+.venv\Scripts\python.exe economist_setup.py   # Windows
+```
+
+On Linux the clipboard needs `wl-clipboard` or `xclip`; without either, save
+the copy to a file and pass `--from-file <file>`.
+
+The manual steps:
 
 > **`__cf_bm` is HttpOnly**, so `document.cookie` in the Console cannot see it.
 > It appears only in the Network panel's request headers.
@@ -151,6 +169,13 @@ One time: harvest a browser export, import it, seed the profile.
    pbpaste | grep -c __cf_bm
    ```
 
+   On Windows, Chrome offers two flavours: pick **Copy as cURL (bash)**, not
+   (cmd). Then in PowerShell (`True` = good):
+
+   ```powershell
+   (Get-Clipboard -Raw) -match '__cf_bm'
+   ```
+
 6. Import and seed, on the **host** (not inside a flatpak):
 
    ```bash
@@ -170,6 +195,18 @@ One time: harvest a browser export, import it, seed the profile.
    python3 economist_session.py --seed
    ```
 
+   On Windows, in PowerShell, with a [uv](https://docs.astral.sh/uv/) virtual
+   environment in the checkout (the recipe finds `.venv` there by itself):
+
+   ```powershell
+   git clone https://github.com/CR0CKER/calibre-economist-cdp $HOME\calibre-economist-cdp
+   cd $HOME\calibre-economist-cdp
+   uv venv
+   Get-Clipboard -Raw | Set-Content -NoNewline "$env:TEMP\eco-curl.txt"
+   .venv\Scripts\python.exe import_curl_cookies.py "$env:TEMP\eco-curl.txt"
+   .venv\Scripts\python.exe economist_session.py --seed
+   ```
+
    `--seed` launches the browser, navigates, waits for the site to accept the
    session, and writes the renewed cookie file. It also records its own location
    in calibre's config dir so the recipe can find it. If the helper reports
@@ -180,12 +217,13 @@ that runs calibre (for a flatpak calibre: `flatpak override --user --env=... com
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `ECONOMIST_BROWSER_CMD` | command that starts Chromium, e.g. `google-chrome` or `flatpak run --command=chromium org.chromium.Chromium` | Linux: ungoogled-chromium flatpak; macOS: installed Chrome or Chromium |
-| `ECONOMIST_CHROME_PROFILE` | the dedicated profile directory (never your everyday profile) | inside the flatpak's config tree |
+| `ECONOMIST_BROWSER_CMD` | command that starts Chromium, e.g. `google-chrome` or `flatpak run --command=chromium org.chromium.Chromium` | Linux: ungoogled-chromium flatpak; macOS and Windows: installed Chrome or Chromium |
+| `ECONOMIST_CHROME_PROFILE` | the dedicated profile directory (never your everyday profile) | inside the flatpak's config tree; Windows: `%LOCALAPPDATA%\calibre-economist-cdp\chrome-profile` |
 | `ECONOMIST_SESSION_SCRIPT` | path to `economist_session.py`, if the recorded location is wrong | the recorded location |
+| `ECONOMIST_PYTHON` | the Python the recipe runs the helper with | `python3`; Windows: `.venv\Scripts\python.exe` beside the helper, else `python` or `py` on `PATH` |
 | `ECONOMIST_DEBUG` | set to `1` to print the best-effort paths (retries, skipped teardown steps) to stderr | unset, silent |
 | `ECONOMIST_SERVE_MAX_S` | seconds after which a served browser is shut down regardless, so a crashed download cannot leave the DevTools port open | 2700 (45 min) |
-| `CALIBRE_CONFIG_DIRECTORY` | calibre's config dir, if not the flatpak or platform default (`~/Library/Preferences/calibre` on macOS, `~/.config/calibre` on Linux) | auto |
+| `CALIBRE_CONFIG_DIRECTORY` | calibre's config dir, if not the flatpak or platform default (`~/Library/Preferences/calibre` on macOS, `%APPDATA%\calibre` on Windows, `~/.config/calibre` on Linux) | auto |
 
 **Flatpak calibre only:** the recipe has to start a program on the host from inside
 calibre's sandbox. Grant that once:
@@ -298,11 +336,12 @@ Every one of these caused a silent failure during development.
 | Path | Purpose |
 |---|---|
 | `economist.recipe` | The recipe. Paste into calibre as a custom news source. |
+| `economist_setup.py` | Interactive one-time setup: import from the clipboard, `--seed`, recipe onto the clipboard. |
 | `economist_session.py` | Entry point: freshness logic, cookie-file contract, reporting, config-dir discovery. |
 | `economist_chrome.py` | The navigator and fetch session: drives Chromium over CDP; `--serve` leaves it running. Contains a minimal RFC 6455 WebSocket client so there is nothing to install. |
 | `import_curl_cookies.py` | One-time import from a DevTools "Copy as cURL". |
 | `check_economist_access.py` | Standalone diagnostic: does the served session reach the site? Run it after `--serve`. |
-| `test_*.py`, `conftest.py` | Unit tests (116). `conftest.py` loads the recipe with calibre's imports stubbed so it can be tested. Run via `scripts/gates.sh` |
+| `test_*.py`, `conftest.py` | Unit tests (144). `conftest.py` loads the recipe with calibre's imports stubbed so it can be tested. Run via `scripts/gates.sh` |
 | `scripts/gates.sh` | The merge gates: `ruff`, `bandit`, `pytest`. CI runs exactly this script |
 | `requirements-dev.txt` | Hash-locked dev tools (pytest, ruff, bandit). Not needed at run time |
 
@@ -341,36 +380,30 @@ if you would rather keep it somewhere else.
 
 <sub>[↑ Back to contents](#contents)</sub>
 
-## Porting to Windows
+## Windows
 
-Not started, and I have no machine to test on. This is what an audit of the code
-found, so anyone picking it up starts from facts rather than from a survey. Pull
-requests welcome; I will review promptly.
+**Verified on:** Windows 11 Pro, calibre 9.14, Google Chrome 155, Python 3.13
+in a uv virtual environment: a full end-to-end edition download, set up with
+`economist_setup.py`. The unit tests pass on Windows; those that assert POSIX
+permission bits are skipped there.
 
-Everything in the DevTools layer is portable standard-library Python: the
-websocket client, the port allocation, the fetch path, the parser, the cookie
-handling. What breaks is the POSIX assumptions around it.
+What differs, all selected automatically by `sys.platform == 'win32'`:
 
-**Two blockers, both from the same cause.** Windows has no POSIX permission bits.
-`os.chmod` only toggles the read-only flag, and any writable file reads back as
-mode `0666`.
-
-| Where | What happens |
+| Where | On Windows |
 |---|---|
-| `economist.recipe`, cookie-file check | Refuses every cookie file as "group/world readable" and tells the user to `chmod 600`, which cannot help there |
-| `economist.recipe`, session-pointer check | Refuses the pointer file the session helper itself just wrote, so the recipe never finds the helper |
-| `economist.recipe`, `_spawn` | Spawns `python3`, which is not the interpreter name on Windows |
+| calibre's config dir | `%APPDATA%\calibre`, calibre's native location. Inside calibre the recipe asks calibre itself |
+| Default browser | `chrome.exe` of Google Chrome or Chromium under Program Files, Program Files (x86) or `%LOCALAPPDATA%`, then `chrome` or `chromium` on `PATH` |
+| Default profile | `%LOCALAPPDATA%\calibre-economist-cdp\chrome-profile` |
+| `ECONOMIST_BROWSER_CMD` | Parsed in Windows mode, so backslashes survive; quote a path with spaces |
+| Python for the helper | `.venv\Scripts\python.exe` beside `economist_session.py`, then `python` or `py` on `PATH`; `ECONOMIST_PYTHON` overrides. calibre's own interpreter is not usable for this |
+| Console windows | The helper and its watchdog are started with `CREATE_NO_WINDOW`, so a scheduled download does not flash a console |
+| `--stop`'s pid fallback | No `/proc` or `ps`: the command line comes from `Get-CimInstance Win32_Process` through PowerShell, for the same profile-path check |
+| Permission checks | **Off.** Windows has no POSIX permission bits and reports every writable file as `0666`, so the cookie-file and session-pointer checks would refuse everything. The credential files are protected only by the ACL of your user profile, where they live |
+| Setup | "Copy as cURL (**bash**)", `Get-Clipboard` instead of `wl-paste` (see [Setup](#setup) step 6). The importer accepts the BOM and CRLF a Windows paste brings, and rejects the (cmd) flavour |
 
-The fix is to gate both mode checks on `os.name == 'posix'` and resolve the
-interpreter rather than hard-coding it. Note what is lost: on Windows the
-credential files are not permission-protected at all, so the protection is the
-user profile's ACL and that should be said out loud in the docs.
-
-**The harder half is not the code.** Running is not working. This approach
-depends on the browser fingerprint being genuinely the user's own; it has been
-observed to clear DataDome on a Linux machine and on the macOS one above, each
-with its owner's own browser and IP. A port needs someone who can actually run a
-download and see articles, not just a green test suite.
+The hash-locked `requirements-dev.txt` was compiled on Linux and lacks
+`colorama`, which pytest needs on Windows. For local development there, install
+the pinned top-level tools instead: `uv pip install -r requirements-dev.in`.
 
 <sub>[↑ Back to contents](#contents)</sub>
 

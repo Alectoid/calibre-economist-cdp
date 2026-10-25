@@ -15,6 +15,8 @@ import urllib.error
 
 import pytest
 
+from economist_session import HAS_MODE_BITS
+
 
 # --------------------------------------------------------------------------
 # CDPBrowser: the surface calibre's fetcher calls
@@ -300,6 +302,7 @@ def test_pointer_file_is_used_when_no_env_var(recipe, monkeypatch, tmp_path):
     assert recipe._find_session_script() == '/opt/economist/economist_session.py'
 
 
+@pytest.mark.skipif(not HAS_MODE_BITS, reason='no POSIX permission bits')
 @pytest.mark.parametrize('mode', [0o646, 0o664, 0o666])
 def test_group_or_world_writable_pointer_is_refused(recipe, monkeypatch, tmp_path, mode):
     """The path in this file is imported and executed inside calibre, so a
@@ -310,6 +313,61 @@ def test_group_or_world_writable_pointer_is_refused(recipe, monkeypatch, tmp_pat
     pointer.write_text(str(tmp_path / 'attacker.py') + '\n')
     os.chmod(pointer, mode)
     assert recipe._find_session_script() == ''
+
+
+@pytest.mark.parametrize('mode', [0o666])
+def test_pointer_mode_is_not_checked_without_permission_bits(recipe, monkeypatch, tmp_path, mode):
+    """Windows stats every writable file as 0666; refusing that would refuse
+    the pointer the helper itself just wrote, and the recipe would never run."""
+    monkeypatch.delenv('ECONOMIST_SESSION_SCRIPT', raising=False)
+    monkeypatch.setattr(recipe, 'CONFIG_DIR', str(tmp_path))
+    monkeypatch.setattr(recipe, 'HAS_MODE_BITS', False)
+    pointer = tmp_path / 'economist-session.path'
+    pointer.write_text('C:\\eco\\economist_session.py\n')
+    os.chmod(pointer, mode)
+    assert recipe._find_session_script() == 'C:\\eco\\economist_session.py'
+
+
+# --------------------------------------------------------------------------
+# Which Python runs the session helper
+# --------------------------------------------------------------------------
+
+def test_python_is_python3_on_posix(recipe, monkeypatch):
+    monkeypatch.delenv('ECONOMIST_PYTHON', raising=False)
+    monkeypatch.setattr(recipe.sys, 'platform', 'linux')
+    assert recipe._python() == 'python3'
+
+
+def test_python_env_var_wins(recipe, monkeypatch):
+    monkeypatch.setenv('ECONOMIST_PYTHON', '/opt/py/bin/python')
+    monkeypatch.setattr(recipe.sys, 'platform', 'win32')
+    assert recipe._python() == '/opt/py/bin/python'
+
+
+def test_python_prefers_the_venv_beside_the_helper_on_windows(recipe, monkeypatch, tmp_path):
+    monkeypatch.delenv('ECONOMIST_PYTHON', raising=False)
+    monkeypatch.setattr(recipe.sys, 'platform', 'win32')
+    monkeypatch.setattr(recipe, 'SESSION_SCRIPT', str(tmp_path / 'economist_session.py'))
+    venv = tmp_path / '.venv' / 'Scripts' / 'python.exe'
+    venv.parent.mkdir(parents=True)
+    venv.write_bytes(b'')
+    assert recipe._python() == str(venv)
+
+
+def test_python_falls_back_to_path_on_windows(recipe, monkeypatch, tmp_path):
+    monkeypatch.delenv('ECONOMIST_PYTHON', raising=False)
+    monkeypatch.setattr(recipe.sys, 'platform', 'win32')
+    monkeypatch.setattr(recipe, 'SESSION_SCRIPT', str(tmp_path / 'economist_session.py'))
+    monkeypatch.setattr(recipe.shutil, 'which',
+                        lambda name: {'py': 'C:\\Windows\\py.exe'}.get(name))
+    assert recipe._python() == 'C:\\Windows\\py.exe'
+
+
+def test_spawn_runs_the_helper_with_the_resolved_python(recipe, monkeypatch):
+    monkeypatch.setattr(recipe.os.path, 'exists', lambda p: False)   # not in a flatpak
+    monkeypatch.setattr(recipe, '_python', lambda: 'PY')
+    monkeypatch.setattr(recipe, 'SESSION_SCRIPT', 'S')
+    assert recipe._spawn(['--serve']) == ['PY', 'S', '--serve']
 
 
 # --------------------------------------------------------------------------

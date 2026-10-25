@@ -57,13 +57,21 @@ import time
 
 FLATPAK_CONFIG_DIR = os.path.expanduser('~/.var/app/com.calibre_ebook.calibre/config/calibre')
 MACOS_CONFIG_DIR = os.path.expanduser('~/Library/Preferences/calibre')
+WINDOWS_CONFIG_DIR = os.path.join(
+    os.environ.get('APPDATA') or os.path.expanduser('~/AppData/Roaming'), 'calibre')
+
+# Windows has no POSIX permission bits: os.stat() reports every writable file as
+# 0666 and os.chmod() only toggles read-only. Mode checks apply on POSIX only;
+# on Windows the ACL of the user's own profile, where these files live, is the
+# protection. economist.recipe keeps its own copy (it cannot import this module).
+HAS_MODE_BITS = sys.platform != 'win32'
 
 
 def calibre_config_dir() -> str:
     """calibre's config directory, wherever this calibre keeps it.
 
     Order: the CALIBRE_CONFIG_DIRECTORY override calibre itself honours, then
-    the flatpak location if it exists, then macOS's or Linux's native default.
+    the flatpak location if it exists, then the platform's native default.
     """
     env = os.environ.get('CALIBRE_CONFIG_DIRECTORY')
     if env:
@@ -72,6 +80,8 @@ def calibre_config_dir() -> str:
         return FLATPAK_CONFIG_DIR
     if sys.platform == 'darwin':
         return MACOS_CONFIG_DIR
+    if sys.platform == 'win32':
+        return WINDOWS_CONFIG_DIR
     return os.path.expanduser('~/.config/calibre')
 
 
