@@ -175,7 +175,8 @@ if you would rather keep it somewhere else.
 ([#15](https://github.com/CR0CKER/calibre-economist-cdp/pull/15)) on Windows 11
 Pro, calibre 9.14, Google Chrome 155, Python 3.13 in a uv virtual environment:
 a full end-to-end edition download, set up with `economist_setup.py`. The unit tests pass on Windows; those that assert POSIX
-permission bits are skipped there.
+permission bits are skipped there. For development on Windows, see the
+[README](../README.md#development).
 
 What differs, all selected automatically by `sys.platform == 'win32'`:
 
@@ -190,10 +191,6 @@ What differs, all selected automatically by `sys.platform == 'win32'`:
 | `--stop`'s pid fallback | No `/proc` or `ps`: the command line comes from `Get-CimInstance Win32_Process` through PowerShell, for the same profile-path check, read as UTF-8 so a user name with non-ASCII letters still matches |
 | Permission checks | **Off.** Windows has no POSIX permission bits and reports every writable file as `0666`, so the cookie-file and session-pointer checks would refuse everything. The credential files are protected only by the ACL of your user profile, where they live |
 | Setup | "Copy as cURL (**bash**)", `Get-Clipboard` instead of `wl-paste` (see [manual setup](manual-setup.md#the-steps) step 6). The importer accepts the BOM and CRLF a Windows paste brings, and rejects the (cmd) flavour |
-
-The hash-locked `requirements-dev.txt` was compiled on Linux and lacks
-`colorama`, which pytest needs on Windows. For local development there, install
-the pinned top-level tools instead: `uv pip install -r requirements-dev.in`.
 
 <sub>[↑ Back to contents](#contents)</sub>
 

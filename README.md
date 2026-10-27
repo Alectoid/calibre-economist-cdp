@@ -40,11 +40,13 @@ the way: [docs/design.md](docs/design.md).
 - calibre 8 or 9 (tested on 9.7 and 9.14)
 - Google Chrome or Chromium
 - Python 3.10+. The runtime needs no third-party packages.
+- On Windows, [uv](https://docs.astral.sh/uv/) for the virtual environment
 - Linux, macOS or Windows. Linux is where this was built and is tested. macOS
   ([#9](https://github.com/CR0CKER/calibre-economist-cdp/pull/9)) and Windows
   ([#15](https://github.com/CR0CKER/calibre-economist-cdp/pull/15)) were
   contributed and verified end to end by their authors; what differs is in
-  [docs/design.md](docs/design.md#macos).
+  docs/design.md under [macOS](docs/design.md#macos) and
+  [Windows](docs/design.md#windows).
 
 ## Setup
 
@@ -74,7 +76,8 @@ python3 economist_setup.py                   # Linux, macOS
 .venv\Scripts\python.exe economist_setup.py  # Windows
 ```
 
-It walks you through four steps:
+Run it on the host, not inside a flatpak or toolbox shell. It walks you through
+four steps:
 
 1. **Checks** Python, the browser and calibre's config folder. On a flatpak
    calibre, it offers to grant the permission calibre needs to start the
@@ -103,7 +106,10 @@ either, save the cURL copy to a file and run
 afterwards, since it holds your login.
 
 To update the recipe later, edit the same custom recipe in place rather than
-adding a second copy. Changes to the `.py` files need no reinstall.
+adding a second copy: a schedule is tied to the recipe it was set on. Changes
+to the `.py` files need no reinstall. For the same reason, when you run the
+setup tool again later, for example after a block, skip its step 4 if the
+recipe is already installed.
 
 To do all of this by hand instead, see [docs/manual-setup.md](docs/manual-setup.md).
 
@@ -158,13 +164,14 @@ For a flatpak calibre, set them with
 | `Failed to change to directory "/tmp/calibre-…"` | Should not happen with this recipe; please report it. |
 | `NoArticles` | The site's page layout changed; the parser needs an update. |
 
-Your session is tied to your IP. After a network change, run `--seed` again.
+Your session is tied to your IP and your browser's User-Agent. Set it up on the
+machine that will download, and run `--seed` again after a network change.
 
 ## Security
 
 The cookie file in calibre's config folder is your login. Nothing here prints
-cookie values. On Linux and macOS the files are created `0600` and the profile
-`0700`. On Windows only your user account's permissions protect them. The
+cookie values. On Linux and macOS the cookie file is created `0600` and the
+profile `0700`. On Windows only your user account's permissions protect them. The
 browser's DevTools port listens on localhost only and refuses connections from
 web pages.
 

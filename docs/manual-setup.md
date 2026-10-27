@@ -37,7 +37,9 @@ One time: harvest a browser export, import it, seed the profile.
    (Get-Clipboard -Raw) -match '__cf_bm'
    ```
 
-6. Import and seed, on the **host** (not inside a flatpak):
+6. Import and seed, on the **host** (not inside a flatpak). Skip the
+   `git clone`, `cd` and `uv venv` lines if you already did the README's
+   [step 1](../README.md#1-get-the-code).
 
    ```bash
    git clone https://github.com/CR0CKER/calibre-economist-cdp ~/calibre-economist-cdp
