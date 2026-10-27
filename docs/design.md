@@ -1,6 +1,7 @@
 # Design notes
 
-Why this project exists, how it works, and what it learned the hard way. For
+Why calibre's built-in Economist recipe stopped working, how this project gets
+around it, the traps found along the way, and what differs per platform. For
 setup and everyday use, see the [README](../README.md).
 
 ## Contents
