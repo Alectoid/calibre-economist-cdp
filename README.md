@@ -197,9 +197,9 @@ python3 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-
 PATH=.venv/bin:$PATH scripts/gates.sh
 ```
 
-On Windows the hash-locked `requirements-dev.txt` lacks `colorama`, which pytest
-needs there; install the pinned top-level tools instead:
-`uv pip install -r requirements-dev.in`.
+On Windows, `requirements-dev.txt` can't be used: it was generated on Linux and
+lacks `colorama`, which pytest needs on Windows. Install the same tool versions
+from `requirements-dev.in` instead: `uv pip install -r requirements-dev.in`.
 
 CI (`.github/workflows/ci.yml`) runs the same script plus a gitleaks scan of the
 full history on every push and pull request, and is a required check on `main`.
